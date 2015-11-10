@@ -1,0 +1,263 @@
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace ConsoleCalculator
+{
+    class Program
+    {
+        static Dictionary<char, int> ops = new Dictionary<char, int>()
+        {
+            {'*', 2},
+            {'+', 1},
+            {'/', 2},
+            {'-', 1}
+        };
+        static Queue<List<dynamic>> OpsQ = new Queue<List<dynamic>>();
+
+        static void Main(string[] args)
+        {
+            while (true)
+            {
+                OpsQ.Clear();
+                string arg = Console.ReadLine();
+                if (arg == "q" || arg == "й")
+                    break;
+                try
+                {
+                    isValid(ref arg);
+                    OpsQ.Enqueue(ParseString(arg, 0, ref OpsQ));
+                    string res = DoMath(ref OpsQ);
+                    Console.WriteLine(res);
+                }
+                catch (ArgumentNullException)
+                {
+                    Console.WriteLine("Пустая строка");
+                }
+                catch (ArgumentException)
+                {
+                    Console.WriteLine("Некорректный формат строки");
+                }
+                catch (ArithmeticException)
+                {
+                    Console.WriteLine("Некорректное выражение");
+                }
+            }
+        }
+
+        public static List<dynamic> ParseString(string arg, int subL, ref Queue<List<dynamic>> OpsQ)
+        {
+            if (arg.Contains(' '))
+            {
+                while (arg.Contains(' '))
+                    arg = arg.Remove(arg.IndexOf(' '), 1);
+            }
+            int ind = 0;
+            List<dynamic> args = new List<dynamic>();
+            List<char> opsL = new List<char>();
+            do
+            {
+                if (arg.StartsWith("("))
+                {
+                    int i = 0;
+                    int openB = 1;
+                    int closeB = 0;
+                    do
+                    {
+                        i++;
+                        if (arg[i] == '(')
+                            openB++;
+                        if (arg[i] == ')')
+                            closeB++;
+                    }
+                    while (openB>closeB);
+                    float y = 0;
+                    if (float.TryParse(arg.Substring(1, i - 1), out y))
+                        args.Add(arg.Substring(1, i - 1));
+                    else
+                    {
+                        List<dynamic> subOp = ParseString(arg.Substring(1, i - 1), subL + 1, ref OpsQ);
+                        subOp.Add(string.Format("=ref{0}", subL));
+                        OpsQ.Enqueue(subOp);
+                        args.Add(string.Format("ref{0}", subL));
+                    }
+                    if (i < arg.Length - 1)
+                        arg = arg.Substring(i + 1);
+                    else
+                        break;
+                }
+                ind = arg.IndexOfAny(ops.Keys.ToArray(), 0);
+                if (ind == -1)
+                {
+                    args.Add(arg);
+                    break;
+                }
+                if (arg.Substring(0, ind) == "")
+                {
+                    if (args.Count == 0)
+                        continue;
+                    else
+                    {
+                        args.Add(arg[ind]);
+                        ind++;
+                        arg = arg.Substring(ind);
+                    }
+                }
+                else
+                {
+                    args.Add(arg.Substring(0, ind));
+                    args.Add(arg[ind]);
+                    ind++;
+                    arg = arg.Substring(ind);
+                }
+            }
+            while (ind != -1);
+            return args;
+        }
+
+        public static string DoOp(string arg1, string arg2, char op)
+        {
+            string result = "";
+            switch(op)
+            {
+                case '+': result = (float.Parse(arg1) + float.Parse(arg2)).ToString();
+                    break;
+                case '-': result = (float.Parse(arg1) - float.Parse(arg2)).ToString();
+                    break;
+                case '*': result = (float.Parse(arg1) * float.Parse(arg2)).ToString();
+                    break;
+                case '/':
+                    {
+                        if (float.Parse(arg2) == 0)
+                            throw new ArithmeticException();
+                        result = (float.Parse(arg1) / float.Parse(arg2)).ToString();
+                    }
+                    break;
+                default:
+                    {
+                        throw new ArithmeticException();
+                    }
+                    break;
+            }
+            return result;
+        }
+
+        public static bool isValid(ref string arg)
+        {
+            if (string.IsNullOrWhiteSpace(arg))
+                throw new ArgumentNullException();
+            if (arg.Contains(' '))
+            {
+                while (arg.Contains(' '))
+                    arg = arg.Remove(arg.IndexOf(' '), 1);
+            }
+            int ind = arg.IndexOfAny(ops.Keys.ToArray(), 1);
+            if (ind == -1)
+                throw new ArithmeticException();
+            if (arg.LastIndexOfAny(ops.Keys.ToArray()) == arg.Length - 1)
+                throw new ArithmeticException();
+            if (arg.Any(x => char.IsLetter(x)))
+                throw new ArgumentException();
+            if(arg.Contains('('))
+                if (arg.Contains(')'))
+                {
+                    if (arg.Count(x => x == '(') != arg.Count(x => x == ')'))
+                        throw new ArgumentException();
+                    if (arg.IndexOf('(') > arg.IndexOf(')') || arg.IndexOf(')') - arg.IndexOf('(') == 1)
+                    {
+                        throw new ArgumentException();
+                    }
+                }
+                else
+                {
+                    throw new ArgumentException();
+                }
+            else
+                if(arg.Contains(')'))
+                    throw new ArgumentException();
+            return true;
+        }
+
+        public static string DoMath(ref Queue<List<dynamic>> OpsQ)
+        {
+            Dictionary<string,string> intermediateRes = new Dictionary<string,string>();
+            string result = "";
+            do
+            {
+                List<dynamic> op = OpsQ.Dequeue();
+                foreach (var key in from pair in ops orderby pair.Value descending select pair)
+                {
+                    do
+                    {
+                        int i = op.IndexOf(key.Key);
+                        if (i == -1)
+                            break;
+                        if (intermediateRes.ContainsKey(op[i - 1]))
+                            op[i - 1] = intermediateRes[op[i - 1]];
+                        if (intermediateRes.ContainsKey(op[i + 1]))
+                            op[i + 1] = intermediateRes[op[i + 1]];
+                        result = DoOp(op[i - 1], op[i + 1], key.Key);
+                        op[i - 1] = result;
+                        op.RemoveAt(i + 1);
+                        op.RemoveAt(i);
+                    }
+                    while (op.Contains(key.Key));
+                    if (op.Count == 1 || op.Count == 2)
+                        break;
+                }
+                if (((string)op[op.Count - 1]).StartsWith("=ref"))
+                    intermediateRes.Add(((string)op[op.Count - 1]).Substring(1), result);
+            }
+            while (OpsQ.Count > 0);
+            return result;
+        }
+    }
+
+    [TestClass]
+    public class Test
+    {
+        [TestMethod]
+        public void TestMath()
+        {
+            string arg = "12 + (5 *2) - 4/8";
+            string expected = "21,5";
+            Queue<List<dynamic>> OpsQ = new Queue<List<dynamic>>();
+            OpsQ.Enqueue(Program.ParseString(arg, 0, ref OpsQ));
+            string result = Program.DoMath(ref OpsQ);
+            Assert.AreEqual(expected, result, "incorrect");
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(ArgumentException))]
+        public void TestValidationBracketException()
+        {
+            string arg = "12 + (5 *2 - 4/8";
+            bool result = Program.isValid(ref arg);
+            Assert.AreEqual(true, result, "invalid");
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(ArgumentException))]
+        public void TestValidationInvalidSymbolException()
+        {
+            string arg = "12 + (5 *a) - 4/8";
+            bool result = Program.isValid(ref arg);
+            Assert.AreEqual(true, result, "invalid");
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(ArithmeticException))]
+        public void TestMathException()
+        {
+            string arg = "4/0";
+            string expected = "21,5";
+            Queue<List<dynamic>> OpsQ = new Queue<List<dynamic>>();
+            OpsQ.Enqueue(Program.ParseString(arg, 0, ref OpsQ));
+            string result = Program.DoMath(ref OpsQ);
+            Assert.AreEqual(expected, result, "incorrect");
+        }
+    }
+}
